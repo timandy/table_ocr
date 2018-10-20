@@ -1,0 +1,39 @@
+buildscript {
+    ext {
+        springBootVersion = '2.0.6.RELEASE'
+    }
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+group = 'com.bestvike'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    //依赖
+    compile 'org.springframework.boot:spring-boot-starter-web'
+    compile 'org.apache.commons:commons-lang3:3.7'
+    compile 'commons-collections:commons-collections:3.2.2'
+    compile 'commons-io:commons-io:2.4'
+    compile 'org.apache.poi:poi:4.0.0'
+    compile 'com.bestvike:linq:2.0.0'
+    //编译时
+    compileOnly 'org.projectlombok:lombok'
+    //运行时
+    runtimeOnly 'org.springframework.boot:spring-boot-devtools'
+    //测试
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
