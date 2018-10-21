@@ -1,9 +1,20 @@
 package com.bestvike.ocr.util;
 
+import com.bestvike.linq.IEnumerable;
+import com.bestvike.linq.Linq;
+import com.bestvike.ocr.aliyun.AliyunUtils;
+import com.bestvike.ocr.aliyun.entity.AliyunOcrResponse;
+import com.bestvike.ocr.aliyun.entity.AliyunOcrWordInfo;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.codec.binary.Hex;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.Assert;
 
+import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,21 +23,46 @@ import java.util.List;
  */
 public final class GridImage {
     private static final int MIN_RED = 200;
+    private static final int MAX_GREEN = 255 - MIN_RED;
+    private static final int MAX_BLUE = 255 - MIN_RED;
     private static final int MIN_DISTANCE = 5;
-    private final BufferedImage image;
-    private final Dimension dimension;
-    private Rectangle[][] grid;
-    private int gridRowCount;
-    private int gridColumnCount;
+    //图片数据
+    private final byte[] buffer;//图片文件二进制数据
+    private final String format;//图片扩展名
+    private final BufferedImage image;//内存图
+    //结果数据
+    private Rectangle[][] grid;//图片切分的矩形
+    private String[][] table;//识别结果内容
+    private int gridRowCount;//行数
+    private int gridColumnCount;//列数
 
     /**
      * 构造函数
      */
-    public GridImage(BufferedImage image) {
-        Assert.notNull(image, "image cannot be null.");
-        this.image = image;
-        this.dimension = new Dimension(this.image.getWidth(), this.image.getHeight());
+    public GridImage(byte[] buffer) throws IOException {
+        Assert.notNull(buffer, "buffer cannot be null.");
+        Assert.isTrue(buffer.length > 4, "length of buffer must greater than 4.");
+        this.buffer = buffer;
+        this.format = getImageFormat(buffer);
+        this.image = ImageIO.read(new ByteArrayInputStream(buffer));
         this.init();
+    }
+
+    /**
+     * 获取图片真实扩展名
+     */
+    private static String getImageFormat(byte[] data) {
+        byte[] head = new byte[4];
+        System.arraycopy(data, 0, head, 0, head.length);
+        String type = Hex.encodeHexString(head).toUpperCase();
+        if (type.contains("FFD8FF")) {
+            return "jpg";
+        } else if (type.contains("89504E47")) {
+            return "png";
+        } else if (type.contains("424D")) {
+            return "bmp";
+        }
+        throw new RuntimeException("只支持 jpg,png,bmp 格式图片");
     }
 
     /**
@@ -109,18 +145,34 @@ public final class GridImage {
     }
 
     /**
-     * 初始化单元格
-     * 1. 必须划分辅助线
-     * 2. 辅助线要求:
-     * 颜色 红色RGB(255,0,0)
-     * 宽度 1px-3px
-     * 不开启抗锯齿
-     * 必须划到边,不能留空白
+     * 获取切分的单元格
      */
+    public Rectangle[][] getGrid() {
+        return this.grid;
+    }
+
+    /**
+     * 获取单元格行数
+     */
+    public int getGridRowCount() {
+        return this.gridRowCount;
+    }
+
+    /**
+     * 获取单元格列数
+     */
+    public int getGridColumnCount() {
+        return this.gridColumnCount;
+    }
+
+    /**
+     * 初始化单元格
+     */
+    @SuppressWarnings("SuspiciousNameCombination")
     private void init() {
         //识别四个边红色点
-        int right = this.dimension.width - 1;
-        int bottom = this.dimension.height - 1;
+        int right = this.image.getWidth() - 1;
+        int bottom = this.image.getHeight() - 1;
 
         //识别竖线
         List<Point> topPoints = new ArrayList<>();
@@ -131,11 +183,11 @@ public final class GridImage {
         bottomPoints.add(new Point(0, bottom));
         for (int x = 0; x <= right; x++) {
             Color topColor = new Color(this.image.getRGB(x, 0));
-            if (topColor.getRed() > MIN_RED && x - lastTop > MIN_DISTANCE)
+            if (topColor.getRed() > MIN_RED && topColor.getGreen() < MAX_GREEN && topColor.getBlue() < MAX_BLUE && x - lastTop > MIN_DISTANCE)
                 topPoints.add(new Point(lastTop = x, 0));
 
             Color bottomColor = new Color(this.image.getRGB(x, bottom));
-            if (bottomColor.getRed() > MIN_RED && x - lastBottom > MIN_DISTANCE)
+            if (bottomColor.getRed() > MIN_RED && bottomColor.getGreen() < MAX_GREEN && bottomColor.getBlue() < MAX_BLUE && x - lastBottom > MIN_DISTANCE)
                 bottomPoints.add(new Point(lastBottom = x, bottom));
         }
         if (topPoints.size() != bottomPoints.size())
@@ -152,11 +204,11 @@ public final class GridImage {
         rightPoints.add(new Point(right, 0));
         for (int y = 0; y <= bottom; y++) {
             Color leftColor = new Color(this.image.getRGB(0, y));
-            if (leftColor.getRed() > MIN_RED && y - lastLeft > MIN_DISTANCE)
+            if (leftColor.getRed() > MIN_RED && leftColor.getGreen() < MAX_GREEN && leftColor.getBlue() < MAX_BLUE && y - lastLeft > MIN_DISTANCE)
                 leftPoints.add(new Point(0, lastLeft = y));
 
             Color rightColor = new Color(this.image.getRGB(right, y));
-            if (rightColor.getRed() > MIN_RED && y - lastRight > MIN_DISTANCE)
+            if (rightColor.getRed() > MIN_RED && rightColor.getGreen() < MAX_GREEN && rightColor.getBlue() < MAX_BLUE && y - lastRight > MIN_DISTANCE)
                 rightPoints.add(new Point(right, lastRight = y));
         }
         if (leftPoints.size() != rightPoints.size())
@@ -205,23 +257,64 @@ public final class GridImage {
     }
 
     /**
-     * 获取切分的单元格
+     * ocr 识别表格
+     *
+     * @return 文本
      */
-    public Rectangle[][] getGrid() {
-        return this.grid;
+    public String[][] ocr() {
+        if (this.table != null)
+            return this.table;
+
+        //调用阿里云接口识别
+        AliyunOcrResponse response = AliyunUtils.ocrAdvanced(this.buffer);
+        IEnumerable<AliyunOcrWordInfo> prism_wordsInfo = Linq.asEnumerable(response.getPrism_wordsInfo());
+
+        //识别结果派分到单元格
+        Rectangle[][] grid = this.grid;
+        int rowCount = this.gridRowCount;
+        int colCount = this.gridColumnCount;
+        String[][] table = new String[rowCount][colCount];
+        for (int rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+            for (int colIndex = 0; colIndex < colCount; colIndex++) {
+                final int fRowIndex = rowIndex;
+                final int fColIndex = colIndex;
+                final AliyunOcrWordInfo wordInfo = prism_wordsInfo
+                        .where(a -> grid[fRowIndex][fColIndex].contains(a.getRectangle()))
+                        .maxByNull(a -> a.getRectangle().width * a.getRectangle().height);//取面积最大的
+                if (wordInfo == null)
+                    continue;
+                table[fRowIndex][fColIndex] = StringUtils.replaceChars(wordInfo.getWord(), '，', ',');//替换中文逗号
+            }
+        }
+        return this.table = table;
     }
 
     /**
-     * 获取单元格行数
+     * 预览识别结果
+     *
+     * @return html 内容
      */
-    public int getGridRowCount() {
-        return this.gridRowCount;
-    }
-
-    /**
-     * 获取单元格列数
-     */
-    public int getGridColumnCount() {
-        return this.gridColumnCount;
+    public String preview() {
+        StringBuilder builder = new StringBuilder(1000);
+        builder.append("<head><meta charset=\"UTF-8\"><style>body{font-family:微软雅黑;}table{margin-top:10px;border-collapse:collapse;border:1px solid #aaa;}table th{vertical-align:baseline;padding:6px 15px 6px 6px;background-color:#d5d5d5;border:1px solid #aaa;word-break:keep-all;white-space:nowrap;text-align:left;}table td{vertical-align:text-top;padding:6px 15px 6px 6px;background-color:#efefef;border:1px solid #aaa;word-break:break-all;white-space:pre-wrap;}</style></head>");
+        builder.append("<body>\n");
+        builder.append("<img src='data:image/").append(this.format).append(";base64,").append(Base64.encodeBase64String(this.buffer)).append("' />\n");
+        builder.append("<br>\n");
+        builder.append("<table border=\"1\" cellPadding=\"5\" cellspacing=\"0\">\n");
+        int rcRowCount = this.gridRowCount;
+        int rcColCount = this.gridColumnCount;
+        String[][] table = this.ocr();
+        for (int rowIndex = 0; rowIndex < rcRowCount; rowIndex++) {
+            builder.append("  <tr>\n");
+            for (int colIndex = 0; colIndex < rcColCount; colIndex++) {
+                String word = table[rowIndex][colIndex];
+                word = word == null ? StringUtils.EMPTY : HtmlUtils.htmlEscape(word);
+                builder.append("    <td>").append(word).append("</td>\n");
+            }
+            builder.append("  </tr>\n");
+        }
+        builder.append("</table>\n");
+        builder.append("</body>");
+        return builder.toString();
     }
 }

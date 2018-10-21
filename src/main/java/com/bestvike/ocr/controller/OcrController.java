@@ -1,11 +1,13 @@
 package com.bestvike.ocr.controller;
 
-import com.bestvike.ocr.service.OcrService;
+import com.bestvike.ocr.util.GridImage;
 import org.apache.commons.io.IOUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletResponse;
@@ -17,28 +19,31 @@ import java.io.InputStream;
  */
 @Controller
 public class OcrController {
-
-    @Autowired
-    private OcrService ocrService;
-
-    private static InputStream getDemoStream() throws IOException {
-        return new ClassPathResource("demo_table.jpg").getInputStream();
+    @GetMapping("/")
+    public String index() {
+        return "index.htm";
     }
 
-    @GetMapping("/ocr/demo")
+    @PostMapping("/")
+    public void ocr(@RequestParam("file") MultipartFile file, HttpServletResponse response) throws IOException {
+        if (file == null)
+            throw new RuntimeException("图片不能为空");
+        this.doOcr(file.getBytes(), response);
+    }
+
+    @GetMapping("/demo")
     public void ocrDemo(HttpServletResponse response) throws IOException {
-        try (InputStream inputStream = getDemoStream()) {
-            String html = this.ocrService.ocrTable(inputStream);
-            final ServletOutputStream outputStream = response.getOutputStream();
-            IOUtils.write(html, outputStream, "utf-8");
-        }
+        final InputStream demoStream = new ClassPathResource("static/img/demo_table.jpg").getInputStream();
+        this.doOcr(IOUtils.toByteArray(demoStream), response);
     }
 
-    @GetMapping("/ocr/preview")
-    public void buhuixieqianduan(HttpServletResponse response) throws IOException {
-        response.setContentType("image/jpg");
-        try (InputStream inputStream = getDemoStream()) {
-            IOUtils.copy(inputStream, response.getOutputStream());
+    private void doOcr(byte[] bytes, HttpServletResponse response) throws IOException {
+        if (bytes.length == 0)
+            throw new RuntimeException("图片长度不能为 0");
+        GridImage image = new GridImage(bytes);
+        String html = image.preview();
+        try (ServletOutputStream outputStream = response.getOutputStream()) {
+            IOUtils.write(html, outputStream, "utf-8");
         }
     }
 }
