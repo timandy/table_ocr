@@ -19,27 +19,45 @@ import java.io.InputStream;
  */
 @Controller
 public class OcrController {
+    private byte[] getBytes(MultipartFile file) throws IOException {
+        if (file == null)
+            throw new RuntimeException("图片不能为空");
+        byte[] bytes = file.getBytes();
+        if (bytes.length == 0)
+            throw new RuntimeException("图片长度不能为 0");
+        return bytes;
+    }
+
     @GetMapping("/")
     public String index() {
         return "index.htm";
     }
 
-    @PostMapping("/")
+    @PostMapping("/preview")
     public void ocr(@RequestParam("file") MultipartFile file, HttpServletResponse response) throws IOException {
-        if (file == null)
-            throw new RuntimeException("图片不能为空");
-        this.doOcr(file.getBytes(), response);
+        byte[] bytes = this.getBytes(file);
+        this.preview(bytes, response);
+    }
+
+    @PostMapping("/excel")
+    public void excel(@RequestParam MultipartFile file, HttpServletResponse response) throws IOException {
+        byte[] bytes = this.getBytes(file);
+        GridImage image = new GridImage(bytes);
+        response.setHeader("Content-Disposition", "attachment;filename=demo.xls");
+        response.setContentType("application/force-download");//应用程序强制下载
+        try (ServletOutputStream outputStream = response.getOutputStream()) {
+            image.saveAsExcel(outputStream, "demo");
+        }
     }
 
     @GetMapping("/demo")
     public void ocrDemo(HttpServletResponse response) throws IOException {
-        final InputStream demoStream = new ClassPathResource("static/img/demo_table.jpg").getInputStream();
-        this.doOcr(IOUtils.toByteArray(demoStream), response);
+        try (InputStream demoStream = new ClassPathResource("static/img/demo_table.jpg").getInputStream()) {
+            this.preview(IOUtils.toByteArray(demoStream), response);
+        }
     }
 
-    private void doOcr(byte[] bytes, HttpServletResponse response) throws IOException {
-        if (bytes.length == 0)
-            throw new RuntimeException("图片长度不能为 0");
+    private void preview(byte[] bytes, HttpServletResponse response) throws IOException {
         GridImage image = new GridImage(bytes);
         String html = image.preview();
         try (ServletOutputStream outputStream = response.getOutputStream()) {

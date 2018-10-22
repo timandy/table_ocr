@@ -5,9 +5,14 @@
     <title>文本识别</title>
 </head>
 <body>
-<form method="post" action="/" enctype="multipart/form-data">
+<form method="post" action="/preview" enctype="multipart/form-data">
     <input type="file" name="file"><br>
     <input type="submit" value="识别">
+</form>
+<br>
+<form method="post" action="/excel" enctype="multipart/form-data">
+    <input type="file" name="file"><br>
+    <input type="submit" value="生成 excel">
 </form>
 </body>
 </html>
