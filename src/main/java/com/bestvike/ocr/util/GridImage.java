@@ -31,7 +31,6 @@ public final class GridImage {
     private static final int MAX_GREEN = 255 - MIN_RED;
     private static final int MAX_BLUE = 255 - MIN_RED;
     private static final int MIN_DISTANCE = 5;
-    private static final int PADDING = 2;
     //图片数据
     private final byte[] buffer;//图片文件二进制数据
     private final String format;//图片扩展名
@@ -177,22 +176,20 @@ public final class GridImage {
     @SuppressWarnings("SuspiciousNameCombination")
     private void init() {
         //识别四个边红色点
-        final int left = PADDING;
-        final int top = PADDING;
-        final int right = this.image.getWidth() - PADDING - 1;
-        final int bottom = this.image.getHeight() - PADDING - 1;
+        final int right = this.image.getWidth() - 1;
+        final int bottom = this.image.getHeight() - 1;
 
         //识别竖线(从左到右)
         List<Point> topPoints = new ArrayList<>();
         List<Point> bottomPoints = new ArrayList<>();
-        int lastTop = left;
-        int lastBottom = left;
-        topPoints.add(new Point(left, top));
-        bottomPoints.add(new Point(left, bottom));
-        for (int x = left; x <= right; x++) {
-            Color topColor = new Color(this.image.getRGB(x, top));
+        int lastTop = 0;
+        int lastBottom = 0;
+        topPoints.add(new Point(0, 0));
+        bottomPoints.add(new Point(0, bottom));
+        for (int x = 0; x <= right; x++) {
+            Color topColor = new Color(this.image.getRGB(x, 0));
             if (topColor.getRed() > MIN_RED && topColor.getGreen() < MAX_GREEN && topColor.getBlue() < MAX_BLUE && x - lastTop > MIN_DISTANCE)
-                topPoints.add(new Point(lastTop = x, top));
+                topPoints.add(new Point(lastTop = x, 0));
 
             Color bottomColor = new Color(this.image.getRGB(x, bottom));
             if (bottomColor.getRed() > MIN_RED && bottomColor.getGreen() < MAX_GREEN && bottomColor.getBlue() < MAX_BLUE && x - lastBottom > MIN_DISTANCE)
@@ -200,20 +197,20 @@ public final class GridImage {
         }
         if (topPoints.size() != bottomPoints.size())
             throw new RuntimeException("竖线识别失败");
-        topPoints.add(new Point(right, top));
+        topPoints.add(new Point(right, 0));
         bottomPoints.add(new Point(right, bottom));
 
         //识别横线(从上到下)
         List<Point> leftPoints = new ArrayList<>();
         List<Point> rightPoints = new ArrayList<>();
-        int lastLeft = top;
-        int lastRight = top;
-        leftPoints.add(new Point(left, top));
-        rightPoints.add(new Point(right, top));
-        for (int y = top; y <= bottom; y++) {
-            Color leftColor = new Color(this.image.getRGB(left, y));
+        int lastLeft = 0;
+        int lastRight = 0;
+        leftPoints.add(new Point(0, 0));
+        rightPoints.add(new Point(right, 0));
+        for (int y = 0; y <= bottom; y++) {
+            Color leftColor = new Color(this.image.getRGB(0, y));
             if (leftColor.getRed() > MIN_RED && leftColor.getGreen() < MAX_GREEN && leftColor.getBlue() < MAX_BLUE && y - lastLeft > MIN_DISTANCE)
-                leftPoints.add(new Point(left, lastLeft = y));
+                leftPoints.add(new Point(0, lastLeft = y));
 
             Color rightColor = new Color(this.image.getRGB(right, y));
             if (rightColor.getRed() > MIN_RED && rightColor.getGreen() < MAX_GREEN && rightColor.getBlue() < MAX_BLUE && y - lastRight > MIN_DISTANCE)
@@ -221,7 +218,7 @@ public final class GridImage {
         }
         if (leftPoints.size() != rightPoints.size())
             throw new RuntimeException("横线识别失败");
-        leftPoints.add(new Point(left, bottom));
+        leftPoints.add(new Point(0, bottom));
         rightPoints.add(new Point(right, bottom));
 
         //计算所有的交点
