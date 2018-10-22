@@ -8,6 +8,10 @@ import com.bestvike.ocr.aliyun.entity.AliyunOcrWordInfo;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.poi.hssf.usermodel.HSSFCell;
+import org.apache.poi.hssf.usermodel.HSSFRow;
+import org.apache.poi.hssf.usermodel.HSSFSheet;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.springframework.util.Assert;
 
 import javax.imageio.ImageIO;
@@ -15,6 +19,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,6 +31,7 @@ public final class GridImage {
     private static final int MAX_GREEN = 255 - MIN_RED;
     private static final int MAX_BLUE = 255 - MIN_RED;
     private static final int MIN_DISTANCE = 5;
+    private static final int PADDING = 2;
     //图片数据
     private final byte[] buffer;//图片文件二进制数据
     private final String format;//图片扩展名
@@ -171,20 +177,22 @@ public final class GridImage {
     @SuppressWarnings("SuspiciousNameCombination")
     private void init() {
         //识别四个边红色点
-        int right = this.image.getWidth() - 1;
-        int bottom = this.image.getHeight() - 1;
+        final int left = PADDING;
+        final int top = PADDING;
+        final int right = this.image.getWidth() - PADDING - 1;
+        final int bottom = this.image.getHeight() - PADDING - 1;
 
-        //识别竖线
+        //识别竖线(从左到右)
         List<Point> topPoints = new ArrayList<>();
         List<Point> bottomPoints = new ArrayList<>();
-        int lastTop = 0;
-        int lastBottom = 0;
-        topPoints.add(new Point(0, 0));
-        bottomPoints.add(new Point(0, bottom));
-        for (int x = 0; x <= right; x++) {
-            Color topColor = new Color(this.image.getRGB(x, 0));
+        int lastTop = left;
+        int lastBottom = left;
+        topPoints.add(new Point(left, top));
+        bottomPoints.add(new Point(left, bottom));
+        for (int x = left; x <= right; x++) {
+            Color topColor = new Color(this.image.getRGB(x, top));
             if (topColor.getRed() > MIN_RED && topColor.getGreen() < MAX_GREEN && topColor.getBlue() < MAX_BLUE && x - lastTop > MIN_DISTANCE)
-                topPoints.add(new Point(lastTop = x, 0));
+                topPoints.add(new Point(lastTop = x, top));
 
             Color bottomColor = new Color(this.image.getRGB(x, bottom));
             if (bottomColor.getRed() > MIN_RED && bottomColor.getGreen() < MAX_GREEN && bottomColor.getBlue() < MAX_BLUE && x - lastBottom > MIN_DISTANCE)
@@ -192,20 +200,20 @@ public final class GridImage {
         }
         if (topPoints.size() != bottomPoints.size())
             throw new RuntimeException("竖线识别失败");
-        topPoints.add(new Point(right, 0));
+        topPoints.add(new Point(right, top));
         bottomPoints.add(new Point(right, bottom));
 
-        //识别横线
+        //识别横线(从上到下)
         List<Point> leftPoints = new ArrayList<>();
         List<Point> rightPoints = new ArrayList<>();
-        int lastLeft = 0;
-        int lastRight = 0;
-        leftPoints.add(new Point(0, 0));
-        rightPoints.add(new Point(right, 0));
-        for (int y = 0; y <= bottom; y++) {
-            Color leftColor = new Color(this.image.getRGB(0, y));
+        int lastLeft = top;
+        int lastRight = top;
+        leftPoints.add(new Point(left, top));
+        rightPoints.add(new Point(right, top));
+        for (int y = top; y <= bottom; y++) {
+            Color leftColor = new Color(this.image.getRGB(left, y));
             if (leftColor.getRed() > MIN_RED && leftColor.getGreen() < MAX_GREEN && leftColor.getBlue() < MAX_BLUE && y - lastLeft > MIN_DISTANCE)
-                leftPoints.add(new Point(0, lastLeft = y));
+                leftPoints.add(new Point(left, lastLeft = y));
 
             Color rightColor = new Color(this.image.getRGB(right, y));
             if (rightColor.getRed() > MIN_RED && rightColor.getGreen() < MAX_GREEN && rightColor.getBlue() < MAX_BLUE && y - lastRight > MIN_DISTANCE)
@@ -213,23 +221,15 @@ public final class GridImage {
         }
         if (leftPoints.size() != rightPoints.size())
             throw new RuntimeException("横线识别失败");
-        leftPoints.add(new Point(0, bottom));
+        leftPoints.add(new Point(left, bottom));
         rightPoints.add(new Point(right, bottom));
 
         //计算所有的交点
         int rowCount = leftPoints.size();
         int colCount = topPoints.size();
         Point[][] points = new Point[rowCount][colCount];
-        for (int colIndex = 0; colIndex < colCount; colIndex++) {
-            points[0][colIndex] = topPoints.get(colIndex);
-            points[rowCount - 1][colIndex] = bottomPoints.get(colIndex);
-        }
         for (int rowIndex = 0; rowIndex < rowCount; rowIndex++) {
-            points[rowIndex][0] = leftPoints.get(rowIndex);
-            points[rowIndex][colCount - 1] = rightPoints.get(rowIndex);
-        }
-        for (int rowIndex = 1; rowIndex <= rowCount - 2; rowIndex++) {
-            for (int colIndex = 1; colIndex <= colCount - 2; colIndex++)
+            for (int colIndex = 0; colIndex < colCount; colIndex++)
                 points[rowIndex][colIndex] = getIntersection(leftPoints.get(rowIndex), rightPoints.get(rowIndex), topPoints.get(colIndex), bottomPoints.get(colIndex));
         }
 
@@ -295,15 +295,15 @@ public final class GridImage {
      * @return html 内容
      */
     public String preview() {
+        int rcRowCount = this.gridRowCount;
+        int rcColCount = this.gridColumnCount;
+        String[][] table = this.ocr();
         StringBuilder builder = new StringBuilder(1000);
         builder.append("<head><meta charset=\"UTF-8\"><style>body{font-family:微软雅黑;}table{margin-top:10px;border-collapse:collapse;border:1px solid #aaa;}table th{vertical-align:baseline;padding:6px 15px 6px 6px;background-color:#d5d5d5;border:1px solid #aaa;word-break:keep-all;white-space:nowrap;text-align:left;}table td{vertical-align:text-top;padding:6px 15px 6px 6px;background-color:#efefef;border:1px solid #aaa;word-break:break-all;white-space:pre-wrap;}</style></head>");
         builder.append("<body>\n");
         builder.append("<img src='data:image/").append(this.format).append(";base64,").append(Base64.encodeBase64String(this.buffer)).append("' />\n");
         builder.append("<br>\n");
         builder.append("<table border=\"1\" cellPadding=\"5\" cellspacing=\"0\">\n");
-        int rcRowCount = this.gridRowCount;
-        int rcColCount = this.gridColumnCount;
-        String[][] table = this.ocr();
         for (int rowIndex = 0; rowIndex < rcRowCount; rowIndex++) {
             builder.append("  <tr>\n");
             for (int colIndex = 0; colIndex < rcColCount; colIndex++) {
@@ -316,5 +316,34 @@ public final class GridImage {
         builder.append("</table>\n");
         builder.append("</body>");
         return builder.toString();
+    }
+
+    /**
+     * 另存为 excel
+     *
+     * @param outputStream 流
+     * @param sheetName    表格名
+     * @throws IOException 写入流发生异常
+     */
+    public void saveAsExcel(OutputStream outputStream, String sheetName) throws IOException {
+        Assert.notNull(outputStream, "outputStream cannot be null.");
+        Assert.notNull(sheetName, "sheetName cannot be null");
+
+        int rcRowCount = this.gridRowCount;
+        int rcColCount = this.gridColumnCount;
+        String[][] table = this.ocr();
+        HSSFWorkbook wb = new HSSFWorkbook();
+        HSSFSheet sheet = wb.createSheet(sheetName);  //创建table工作薄
+        for (int rowIndex = 0; rowIndex < rcRowCount; rowIndex++) {
+            HSSFRow row = sheet.createRow(rowIndex);//创建表格行
+            for (int colIndex = 0; colIndex < rcColCount; colIndex++) {
+                HSSFCell cell = row.createCell(colIndex);//根据表格行创建单元格
+                String cellValue = table[rowIndex][colIndex];
+                if (StringUtils.isEmpty(cellValue))
+                    continue;
+                cell.setCellValue(cellValue);
+            }
+        }
+        wb.write(outputStream);
     }
 }
