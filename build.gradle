@@ -30,6 +30,9 @@ dependencies {
     compile 'commons-io:commons-io:2.4'
     compile 'org.apache.poi:poi:4.0.0'
     compile 'com.bestvike:linq:2.0.0'
+    compile 'com.alibaba:fastjson:1.2.47'
+    //百度 ai
+    compile  'com.baidu.aip:java-sdk:4.7.0'
     //编译时
     compileOnly 'org.projectlombok:lombok'
     //运行时

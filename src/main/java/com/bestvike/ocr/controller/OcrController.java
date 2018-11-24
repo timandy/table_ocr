@@ -1,7 +1,11 @@
 package com.bestvike.ocr.controller;
 
+import com.bestvike.ocr.baidu.BaiduApi;
+import com.bestvike.ocr.baidu.entity.BaiduOcrResult;
+import com.bestvike.ocr.baidu.entity.BaiduResponse;
 import com.bestvike.ocr.util.GridImage;
 import org.apache.commons.io.IOUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +23,9 @@ import java.io.InputStream;
  */
 @Controller
 public class OcrController {
+    @Autowired
+    private BaiduApi baiduApi;
+
     private byte[] getBytes(MultipartFile file) throws IOException {
         if (file == null)
             throw new RuntimeException("图片不能为空");
@@ -58,8 +65,16 @@ public class OcrController {
     }
 
     private void preview(byte[] bytes, HttpServletResponse response) throws IOException {
+        final BaiduResponse<BaiduOcrResult> ocr = this.baiduApi.ocr(bytes);
+
+
         GridImage image = new GridImage(bytes);
-        String html = image.preview();
+//        String html = image.preview();
+//        try (ServletOutputStream outputStream = response.getOutputStream()) {
+//            IOUtils.write(html, outputStream, "utf-8");
+//        }
+
+        String html = "123";
         try (ServletOutputStream outputStream = response.getOutputStream()) {
             IOUtils.write(html, outputStream, "utf-8");
         }
